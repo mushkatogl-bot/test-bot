@@ -4,11 +4,12 @@ import os
 import time
 import threading
 from datetime import datetime, timedelta
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 
 # ===== КОНФИГ =====
 TOKEN = os.environ.get("BOT_TOKEN", "8922624818:AAEjmrOs1Tr5oQJJYot49wCClVf8rel1FIc")
+ADMIN_ID = 6668127953
 bot = telebot.TeleBot(TOKEN)
 
 # ===== БАЗА ДАННЫХ =====
@@ -43,12 +44,7 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
-
-# ===== МЕНЮ В СТРОКЕ ВВОДА =====
-def get_main_menu():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
-    markup.add(KeyboardButton("🚀 Старт"))
-    return markup
+    print("✅ База данных готова")
 
 # ===== ГЛАВНОЕ МЕНЮ (КАРТИНКА + 3 КНОПКИ) =====
 def get_main_buttons():
@@ -61,7 +57,8 @@ def get_main_buttons():
     return markup
 
 def show_main_menu(chat_id):
-    image_url = "https://your-image-url.com/welcome.jpg"  # Замените на свою картинку
+    """Отправляет главное меню с картинкой"""
+    image_url = "https://your-image-url.com/welcome.jpg"  # ЗАМЕНИТЕ НА ВАШУ КАРТИНКУ
     try:
         bot.send_photo(
             chat_id,
@@ -71,7 +68,6 @@ def show_main_menu(chat_id):
             reply_markup=get_main_buttons()
         )
     except:
-        # Если картинка не загружается, отправляем текст
         bot.send_message(
             chat_id,
             "🏪 *Добро пожаловать в магазин!*\n\nВыберите действие:",
@@ -82,55 +78,105 @@ def show_main_menu(chat_id):
 # ===== КОМАНДЫ ИЗ МЕНЮ TELEGRAM =====
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(
-        message.chat.id,
-        "👋 Добро пожаловать в магазин аккаунтов!",
-        reply_markup=get_main_menu()
-    )
     show_main_menu(message.chat.id)
 
 @bot.message_handler(commands=['catalog'])
 def catalog_command(message):
     """Обработчик команды /catalog из меню"""
-    # Создаём имитацию callback для переиспользования кода
-    class FakeCall:
-        def __init__(self, msg):
-            self.message = msg
-            self.data = "catalog"
-            self.from_user = msg.from_user
-            self.id = None
-    fake_call = FakeCall(message)
-    show_catalog(fake_call)
+    show_catalog_as_message(message.chat.id)
 
 @bot.message_handler(commands=['profile'])
 def profile_command(message):
     """Обработчик команды /profile из меню"""
-    class FakeCall:
-        def __init__(self, msg):
-            self.message = msg
-            self.data = "profile"
-            self.from_user = msg.from_user
-            self.id = None
-    fake_call = FakeCall(message)
-    profile(fake_call)
+    show_profile_as_message(message.chat.id, message.from_user.id)
 
 @bot.message_handler(commands=['support'])
 def support_command(message):
     """Обработчик команды /support из меню"""
-    class FakeCall:
-        def __init__(self, msg):
-            self.message = msg
-            self.data = "support"
-            self.from_user = msg.from_user
-            self.id = None
-    fake_call = FakeCall(message)
-    support(fake_call)
+    show_support_as_message(message.chat.id)
 
-@bot.message_handler(func=lambda message: message.text == "🚀 Старт")
-def start_button(message):
-    show_main_menu(message.chat.id)
+# ===== ФУНКЦИИ ДЛЯ ОТПРАВКИ НОВЫХ СООБЩЕНИЙ =====
+def show_catalog_as_message(chat_id):
+    """Отправляет каталог как НОВОЕ сообщение"""
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM accounts WHERE status = 'available'")
+    accounts = cursor.fetchall()
+    conn.close()
 
-# ===== КАТАЛОГ =====
+    if not accounts:
+        bot.send_message(
+            chat_id,
+            "😕 Аккаунтов в наличии нет. Зайдите позже!"
+        )
+        return
+
+    text = "📋 *Доступные аккаунты:*\n\n"
+    markup = InlineKeyboardMarkup(row_width=1)
+    for acc in accounts:
+        text += f"🔹 *{acc[1]}*\n"
+        text += f"   📅 Регистрация: {acc[2]}\n"
+        if acc[3]:
+            text += f"   ⭐ Топ аккаунт\n"
+        if acc[4]:
+            text += f"   📦 Прогрев товара\n"
+        text += f"   📦 Доступно: {acc[6]}\n"
+        text += f"   💰 Цена: {acc[5]} USD\n"
+        text += f"   🆔 ID: {acc[0]}\n\n"
+        markup.add(InlineKeyboardButton(
+            f"🛒 {acc[1]} - {acc[5]} USD",
+            callback_data=f"buy_{acc[0]}"
+        ))
+    markup.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
+
+    bot.send_message(
+        chat_id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+def show_profile_as_message(chat_id, user_id):
+    """Отправляет профиль как НОВОЕ сообщение"""
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'completed'", (user_id,))
+    orders_count = cursor.fetchone()[0]
+    conn.close()
+
+    text = f"👤 *Ваш профиль*\n\n"
+    text += f"🆔 ID: {user_id}\n"
+    text += f"📦 Покупок: {orders_count}\n"
+    text += f"\nСпасибо, что выбираете нас!"
+
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
+
+    bot.send_message(
+        chat_id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+def show_support_as_message(chat_id):
+    """Отправляет поддержку как НОВОЕ сообщение"""
+    text = "🆘 *Поддержка*\n\n"
+    text += "Если у вас возникли вопросы, напишите нам:\n"
+    text += "✉️ @your_support_username\n"
+    text += "\nМы ответим в течение 24 часов."
+
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
+
+    bot.send_message(
+        chat_id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+# ===== КНОПКИ (CALLBACK) =====
 @bot.callback_query_handler(func=lambda call: call.data == "catalog")
 def show_catalog(call):
     conn = sqlite3.connect('shop.db')
@@ -148,6 +194,7 @@ def show_catalog(call):
         return
 
     text = "📋 *Доступные аккаунты:*\n\n"
+    markup = InlineKeyboardMarkup(row_width=1)
     for acc in accounts:
         text += f"🔹 *{acc[1]}*\n"
         text += f"   📅 Регистрация: {acc[2]}\n"
@@ -158,9 +205,6 @@ def show_catalog(call):
         text += f"   📦 Доступно: {acc[6]}\n"
         text += f"   💰 Цена: {acc[5]} USD\n"
         text += f"   🆔 ID: {acc[0]}\n\n"
-
-    markup = InlineKeyboardMarkup(row_width=1)
-    for acc in accounts:
         markup.add(InlineKeyboardButton(
             f"🛒 {acc[1]} - {acc[5]} USD",
             callback_data=f"buy_{acc[0]}"
@@ -175,7 +219,6 @@ def show_catalog(call):
         reply_markup=markup
     )
 
-# ===== ПРОФИЛЬ =====
 @bot.callback_query_handler(func=lambda call: call.data == "profile")
 def profile(call):
     user_id = call.from_user.id
@@ -193,23 +236,14 @@ def profile(call):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
 
-    try:
-        bot.edit_message_text(
-            text,
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
-    except:
-        bot.send_message(
-            call.message.chat.id,
-            text,
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
 
-# ===== ПОДДЕРЖКА =====
 @bot.callback_query_handler(func=lambda call: call.data == "support")
 def support(call):
     text = "🆘 *Поддержка*\n\n"
@@ -220,23 +254,14 @@ def support(call):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
 
-    try:
-        bot.edit_message_text(
-            text,
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
-    except:
-        bot.send_message(
-            call.message.chat.id,
-            text,
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
 
-# ===== В МЕНЮ =====
 @bot.callback_query_handler(func=lambda call: call.data == "menu")
 def back_to_menu(call):
     show_main_menu(call.message.chat.id)
@@ -257,12 +282,9 @@ def start_purchase(call):
         conn.close()
         return
 
-    # Бронируем на 10 минут
     reserved_until = datetime.now() + timedelta(minutes=10)
     cursor.execute("UPDATE accounts SET status = 'reserved', reserved_by = ?, reserved_until = ? WHERE id = ?",
                    (user_id, reserved_until, account_id))
-
-    # Создаём заказ
     cursor.execute("INSERT INTO orders (user_id, product_id) VALUES (?, ?)", (user_id, account_id))
     order_id = cursor.lastrowid
     conn.commit()
@@ -295,11 +317,10 @@ def start_purchase(call):
         reply_markup=markup
     )
 
-# ===== ОПЛАТА (заглушка) =====
+# ===== ОПЛАТА (ЗАГЛУШКА) =====
 @bot.callback_query_handler(func=lambda call: call.data.startswith("pay_xrocket_"))
 def pay_xrocket(call):
     account_id = int(call.data.split("_")[2])
-    user_id = call.from_user.id
 
     text = f"""💳 *Оплата через X-Rocket*
 
@@ -326,7 +347,6 @@ def pay_xrocket(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("pay_cryptobot_"))
 def pay_cryptobot(call):
     account_id = int(call.data.split("_")[2])
-    user_id = call.from_user.id
 
     text = f"""🤖 *Оплата через Криптобот*
 
@@ -350,7 +370,6 @@ def pay_cryptobot(call):
         reply_markup=markup
     )
 
-# ===== ПРОВЕРКА ОПЛАТЫ =====
 @bot.callback_query_handler(func=lambda call: call.data.startswith("check_"))
 def check_payment(call):
     account_id = int(call.data.split("_")[1])
@@ -376,31 +395,11 @@ def check_payment(call):
     else:
         bot.answer_callback_query(call.id, "⏳ Оплата ещё не получена. Попробуйте позже.", show_alert=True)
 
-# ===== ЗАПУСК БОТА И FLASK =====
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    return "Бот работает на Render!"
-
-def run_polling():
-    print("🚀 Запускаем polling в фоновом потоке...")
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"⚠️ Ошибка в polling: {e}")
-            time.sleep(5)
 # ===== АДМИН-ПАНЕЛЬ =====
-
-ADMIN_ID = 6668127953  # Ваш Telegram ID
-
-# Временное хранилище для данных при добавлении аккаунта
 admin_temp = {}
 
 @bot.message_handler(commands=['admin'])
 def admin_panel(message):
-    """Главное меню админа"""
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "⛔ У вас нет доступа!")
         return
@@ -420,7 +419,6 @@ def admin_panel(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "admin_add")
 def admin_add_start(call):
-    """Начинаем процесс добавления аккаунта"""
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "⛔ Нет доступа!", show_alert=True)
         return
@@ -449,7 +447,6 @@ def admin_add_start(call):
     bot.register_next_step_handler(msg, admin_process_data)
 
 def admin_process_data(message):
-    """Обрабатываем текстовые данные аккаунта"""
     user_id = message.from_user.id
 
     if user_id not in admin_temp:
@@ -460,7 +457,6 @@ def admin_process_data(message):
         bot.send_message(message.chat.id, "❌ Добавление отменено.")
         return
 
-    # Парсим данные
     try:
         lines = message.text.strip().split('\n')
         data = {}
@@ -512,7 +508,6 @@ def admin_process_data(message):
 
 @bot.message_handler(content_types=['document'])
 def admin_process_file(message):
-    """Обрабатываем загруженный файл"""
     user_id = message.from_user.id
 
     if user_id not in admin_temp or admin_temp[user_id].get('step') != 'waiting_file':
@@ -522,17 +517,13 @@ def admin_process_file(message):
         file_info = bot.get_file(message.document.file_id)
         file_name = message.document.file_name
 
-        # Создаём папку, если её нет
         os.makedirs('storage/accounts', exist_ok=True)
-
         file_path = f"storage/accounts/{file_name}"
 
-        # Скачиваем файл
         downloaded_file = bot.download_file(file_info.file_path)
         with open(file_path, 'wb') as new_file:
             new_file.write(downloaded_file)
 
-        # Сохраняем аккаунт в базу
         data = admin_temp[user_id]['data']
         conn = sqlite3.connect('shop.db')
         cursor = conn.cursor()
@@ -563,8 +554,7 @@ def admin_process_file(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "admin_cancel")
 def admin_cancel(call):
-    user_id = call.from_user.id
-    admin_temp.pop(user_id, None)
+    admin_temp.pop(call.from_user.id, None)
     bot.edit_message_text(
         "❌ Добавление отменено.",
         call.message.chat.id,
@@ -573,7 +563,6 @@ def admin_cancel(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "admin_list")
 def admin_list(call):
-    """Показывает список всех аккаунтов"""
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "⛔ Нет доступа!", show_alert=True)
         return
@@ -609,23 +598,18 @@ def admin_list(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "admin_stats")
 def admin_stats(call):
-    """Показывает статистику"""
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "⛔ Нет доступа!", show_alert=True)
         return
 
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
-
     cursor.execute("SELECT COUNT(*) FROM accounts WHERE status = 'available'")
     available = cursor.fetchone()[0]
-
     cursor.execute("SELECT COUNT(*) FROM accounts WHERE status = 'sold'")
     sold = cursor.fetchone()[0]
-
     cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'completed'")
     orders = cursor.fetchone()[0]
-
     conn.close()
 
     text = f"📊 *Статистика*\n\n"
@@ -650,17 +634,30 @@ def admin_back(call):
         return
     admin_panel(call.message)
 
+# ===== ЗАПУСК БОТА И FLASK =====
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return "Бот работает на Render!"
+
+def run_polling():
+    print("🚀 Запускаем polling в фоновом потоке...")
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"⚠️ Ошибка в polling: {e}")
+            time.sleep(5)
+
 if __name__ == '__main__':
-    # Инициализируем базу данных
     init_db()
     print("✅ База данных готова")
 
-    # Запускаем polling в отдельном потоке
     polling_thread = threading.Thread(target=run_polling)
     polling_thread.daemon = True
     polling_thread.start()
 
-    # Запускаем Flask
     port = int(os.environ.get("PORT", 10000))
     print(f"🔥 Запускаем Flask на порту {port}")
     app.run(host='0.0.0.0', port=port)
