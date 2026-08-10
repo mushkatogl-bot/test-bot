@@ -1,48 +1,46 @@
 import telebot
 import os
 import time
+import threading
 from flask import Flask, request
 
+# --- КОНФИГ ---
 TOKEN = os.environ.get("BOT_TOKEN", "8922624818:AAEjmrOs1Tr5oQJJYot49wCClVf8rel1FIc")
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# ===== КОМАНДЫ БОТА =====
+# --- КОМАНДЫ БОТА ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "👋 Привет! Бот работает на Render через вебхук!")
+    bot.send_message(message.chat.id, "👋 Привет! Бот работает на Render через polling + Flask!")
 
 @bot.message_handler(func=lambda message: True)
 def echo(message):
     bot.reply_to(message, f"Вы написали: {message.text}")
 
-# ===== ВЕБХУК =====
-@app.route('/' + TOKEN, methods=['POST'])
-def webhook():
-    try:
-        update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
-        if update:
-            bot.process_new_updates([update])
-        return "OK", 200
-    except Exception as e:
-        print(f"Ошибка: {e}")
-        return "Bad Request", 400
+# --- ФУНКЦИЯ ДЛЯ ЗАПУСКА ПОЛЛИНГА В ОТДЕЛЬНОМ ПОТОКЕ ---
+def run_polling():
+    print("🚀 Запускаем polling в фоновом потоке...")
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"⚠️ Ошибка в polling: {e}")
+            time.sleep(5)
 
+# --- ВЕБ-ЭНДПОИНТЫ (нужны для Render) ---
 @app.route('/')
 def index():
-    return "Бот работает на Render!"
+    return "✅ Бот работает на Render!"
 
-# ===== ЗАПУСК =====
+# --- ЗАПУСК ---
 if __name__ == '__main__':
-    # Порт, который ждёт Render (по умолчанию 10000)
+    # Запускаем polling в отдельном потоке
+    polling_thread = threading.Thread(target=run_polling)
+    polling_thread.daemon = True  # Поток завершится, когда завершится основной
+    polling_thread.start()
+    
+    # Запускаем Flask (основной поток)
     port = int(os.environ.get("PORT", 10000))
-    
-    # Устанавливаем вебхук
-    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}/{TOKEN}"
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.set_webhook(url=webhook_url)
-    print(f"✅ Вебхук установлен на {webhook_url}")
-    
-    # Запускаем Flask
+    print(f"🔥 Запускаем Flask на порту {port}")
     app.run(host='0.0.0.0', port=port)
