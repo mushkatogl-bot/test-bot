@@ -61,17 +61,25 @@ def get_main_buttons():
     return markup
 
 def show_main_menu(chat_id):
-    # Замените на свою картинку
-    image_url = "https://your-image-url.com/welcome.jpg"
-    bot.send_photo(
-        chat_id,
-        image_url,
-        caption="🏪 *Добро пожаловать в магазин!*\n\nВыберите действие:",
-        parse_mode="Markdown",
-        reply_markup=get_main_buttons()
-    )
+    image_url = "https://your-image-url.com/welcome.jpg"  # Замените на свою картинку
+    try:
+        bot.send_photo(
+            chat_id,
+            image_url,
+            caption="🏪 *Добро пожаловать в магазин!*\n\nВыберите действие:",
+            parse_mode="Markdown",
+            reply_markup=get_main_buttons()
+        )
+    except:
+        # Если картинка не загружается, отправляем текст
+        bot.send_message(
+            chat_id,
+            "🏪 *Добро пожаловать в магазин!*\n\nВыберите действие:",
+            parse_mode="Markdown",
+            reply_markup=get_main_buttons()
+        )
 
-# ===== КОМАНДА /start =====
+# ===== КОМАНДЫ ИЗ МЕНЮ TELEGRAM =====
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(
@@ -80,6 +88,43 @@ def start(message):
         reply_markup=get_main_menu()
     )
     show_main_menu(message.chat.id)
+
+@bot.message_handler(commands=['catalog'])
+def catalog_command(message):
+    """Обработчик команды /catalog из меню"""
+    # Создаём имитацию callback для переиспользования кода
+    class FakeCall:
+        def __init__(self, msg):
+            self.message = msg
+            self.data = "catalog"
+            self.from_user = msg.from_user
+            self.id = None
+    fake_call = FakeCall(message)
+    show_catalog(fake_call)
+
+@bot.message_handler(commands=['profile'])
+def profile_command(message):
+    """Обработчик команды /profile из меню"""
+    class FakeCall:
+        def __init__(self, msg):
+            self.message = msg
+            self.data = "profile"
+            self.from_user = msg.from_user
+            self.id = None
+    fake_call = FakeCall(message)
+    profile(fake_call)
+
+@bot.message_handler(commands=['support'])
+def support_command(message):
+    """Обработчик команды /support из меню"""
+    class FakeCall:
+        def __init__(self, msg):
+            self.message = msg
+            self.data = "support"
+            self.from_user = msg.from_user
+            self.id = None
+    fake_call = FakeCall(message)
+    support(fake_call)
 
 @bot.message_handler(func=lambda message: message.text == "🚀 Старт")
 def start_button(message):
@@ -148,13 +193,21 @@ def profile(call):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
 
-    bot.edit_message_text(
-        text,
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode="Markdown",
-        reply_markup=markup
-    )
+    try:
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+    except:
+        bot.send_message(
+            call.message.chat.id,
+            text,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
 
 # ===== ПОДДЕРЖКА =====
 @bot.callback_query_handler(func=lambda call: call.data == "support")
@@ -167,13 +220,21 @@ def support(call):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
 
-    bot.edit_message_text(
-        text,
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode="Markdown",
-        reply_markup=markup
-    )
+    try:
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+    except:
+        bot.send_message(
+            call.message.chat.id,
+            text,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
 
 # ===== В МЕНЮ =====
 @bot.callback_query_handler(func=lambda call: call.data == "menu")
@@ -240,7 +301,6 @@ def pay_xrocket(call):
     account_id = int(call.data.split("_")[2])
     user_id = call.from_user.id
 
-    # Здесь будет интеграция с X-Rocket
     text = f"""💳 *Оплата через X-Rocket*
 
 Сумма: 10 USD (пример)
@@ -290,12 +350,11 @@ def pay_cryptobot(call):
         reply_markup=markup
     )
 
-# ===== ПРОВЕРКА ОПЛАТЫ (заглушка) =====
+# ===== ПРОВЕРКА ОПЛАТЫ =====
 @bot.callback_query_handler(func=lambda call: call.data.startswith("check_"))
 def check_payment(call):
     account_id = int(call.data.split("_")[1])
 
-    # Заглушка: просто выдаём файл
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
     cursor.execute("SELECT file_path FROM accounts WHERE id = ?", (account_id,))
