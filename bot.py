@@ -391,6 +391,264 @@ def run_polling():
         except Exception as e:
             print(f"⚠️ Ошибка в polling: {e}")
             time.sleep(5)
+# ===== АДМИН-ПАНЕЛЬ =====
+
+ADMIN_ID = 6668127953  # Ваш Telegram ID
+
+# Временное хранилище для данных при добавлении аккаунта
+admin_temp = {}
+
+@bot.message_handler(commands=['admin'])
+def admin_panel(message):
+    """Главное меню админа"""
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "⛔ У вас нет доступа!")
+        return
+
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("➕ Добавить аккаунт", callback_data="admin_add"),
+        InlineKeyboardButton("📋 Список аккаунтов", callback_data="admin_list"),
+        InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")
+    )
+    bot.send_message(
+        message.chat.id,
+        "🔐 *Админ-панель*\n\nВыберите действие:",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_add")
+def admin_add_start(call):
+    """Начинаем процесс добавления аккаунта"""
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "⛔ Нет доступа!", show_alert=True)
+        return
+
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel"))
+
+    msg = bot.send_message(
+        call.message.chat.id,
+        "📝 *Добавление нового аккаунта*\n\n"
+        "Отправьте данные в формате:\n\n"
+        "```\n"
+        "Название: Аккаунт #1\n"
+        "Дата регистрации: 2024-01-15\n"
+        "Топ: да\n"
+        "Прогрев: нет\n"
+        "Цена: 10\n"
+        "Количество: 1\n"
+        "```\n\n"
+        "После этого отправьте файл с куки.",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+    admin_temp[call.from_user.id] = {'step': 'waiting_data', 'data': {}}
+    bot.register_next_step_handler(msg, admin_process_data)
+
+def admin_process_data(message):
+    """Обрабатываем текстовые данные аккаунта"""
+    user_id = message.from_user.id
+
+    if user_id not in admin_temp:
+        return
+
+    if message.text == "❌ Отмена":
+        admin_temp.pop(user_id, None)
+        bot.send_message(message.chat.id, "❌ Добавление отменено.")
+        return
+
+    # Парсим данные
+    try:
+        lines = message.text.strip().split('\n')
+        data = {}
+        for line in lines:
+            if ':' in line:
+                key, value = line.split(':', 1)
+                key = key.strip().lower()
+                value = value.strip()
+                if key == 'название':
+                    data['name'] = value
+                elif key == 'дата регистрации':
+                    data['register_date'] = value
+                elif key == 'топ':
+                    data['is_top'] = 1 if value.lower() in ['да', 'yes', 'true', '1'] else 0
+                elif key == 'прогрев':
+                    data['has_product'] = 1 if value.lower() in ['да', 'yes', 'true', '1'] else 0
+                elif key == 'цена':
+                    data['price'] = float(value)
+                elif key == 'количество':
+                    data['quantity'] = int(value)
+
+        if 'name' not in data or 'price' not in data:
+            raise ValueError("Не хватает обязательных полей (Название, Цена)")
+
+        admin_temp[user_id]['data'] = data
+        admin_temp[user_id]['step'] = 'waiting_file'
+
+        bot.send_message(
+            message.chat.id,
+            f"✅ Данные приняты:\n\n"
+            f"📌 Название: {data.get('name')}\n"
+            f"📅 Дата регистрации: {data.get('register_date', 'не указана')}\n"
+            f"⭐ Топ: {'Да' if data.get('is_top') else 'Нет'}\n"
+            f"📦 Прогрев: {'Да' if data.get('has_product') else 'Нет'}\n"
+            f"💰 Цена: {data.get('price')} USD\n"
+            f"📦 Количество: {data.get('quantity', 1)}\n\n"
+            "📤 Теперь отправьте файл с куки (TXT, JSON или DAT)."
+        )
+
+    except Exception as e:
+        bot.send_message(
+            message.chat.id,
+            f"❌ Ошибка: {e}\n\n"
+            "Попробуйте снова. Формат:\n"
+            "Название: Аккаунт #1\n"
+            "Цена: 10"
+        )
+        bot.register_next_step_handler(message, admin_process_data)
+
+@bot.message_handler(content_types=['document'])
+def admin_process_file(message):
+    """Обрабатываем загруженный файл"""
+    user_id = message.from_user.id
+
+    if user_id not in admin_temp or admin_temp[user_id].get('step') != 'waiting_file':
+        return
+
+    if message.document:
+        file_info = bot.get_file(message.document.file_id)
+        file_name = message.document.file_name
+
+        # Создаём папку, если её нет
+        os.makedirs('storage/accounts', exist_ok=True)
+
+        file_path = f"storage/accounts/{file_name}"
+
+        # Скачиваем файл
+        downloaded_file = bot.download_file(file_info.file_path)
+        with open(file_path, 'wb') as new_file:
+            new_file.write(downloaded_file)
+
+        # Сохраняем аккаунт в базу
+        data = admin_temp[user_id]['data']
+        conn = sqlite3.connect('shop.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO accounts (name, register_date, is_top, has_product, price, quantity, file_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            data['name'],
+            data.get('register_date', ''),
+            data.get('is_top', 0),
+            data.get('has_product', 0),
+            data['price'],
+            data.get('quantity', 1),
+            file_path
+        ))
+        conn.commit()
+        conn.close()
+
+        bot.send_message(
+            message.chat.id,
+            f"✅ Аккаунт *{data['name']}* успешно добавлен!\n"
+            f"📁 Файл: {file_name}\n"
+            f"💰 Цена: {data['price']} USD",
+            parse_mode="Markdown"
+        )
+
+        admin_temp.pop(user_id, None)
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_cancel")
+def admin_cancel(call):
+    user_id = call.from_user.id
+    admin_temp.pop(user_id, None)
+    bot.edit_message_text(
+        "❌ Добавление отменено.",
+        call.message.chat.id,
+        call.message.message_id
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_list")
+def admin_list(call):
+    """Показывает список всех аккаунтов"""
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "⛔ Нет доступа!", show_alert=True)
+        return
+
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, price, status, quantity FROM accounts")
+    accounts = cursor.fetchall()
+    conn.close()
+
+    if not accounts:
+        text = "📋 *Список аккаунтов*\n\nАккаунтов пока нет."
+    else:
+        text = "📋 *Список аккаунтов*\n\n"
+        for acc in accounts:
+            status_emoji = {
+                'available': '✅',
+                'reserved': '⏳',
+                'sold': '❌'
+            }.get(acc[3], '❓')
+            text += f"{status_emoji} ID: {acc[0]} | {acc[1]} | {acc[4]} шт. | {acc[2]} USD\n"
+
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("🔙 В админ-панель", callback_data="admin_back"))
+
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_stats")
+def admin_stats(call):
+    """Показывает статистику"""
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "⛔ Нет доступа!", show_alert=True)
+        return
+
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM accounts WHERE status = 'available'")
+    available = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM accounts WHERE status = 'sold'")
+    sold = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'completed'")
+    orders = cursor.fetchone()[0]
+
+    conn.close()
+
+    text = f"📊 *Статистика*\n\n"
+    text += f"📦 Доступно: {available}\n"
+    text += f"✅ Продано: {sold}\n"
+    text += f"📋 Всего заказов: {orders}"
+
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("🔙 В админ-панель", callback_data="admin_back"))
+
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_back")
+def admin_back(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+    admin_panel(call.message)
 
 if __name__ == '__main__':
     # Инициализируем базу данных
