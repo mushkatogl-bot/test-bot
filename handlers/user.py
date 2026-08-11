@@ -6,7 +6,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Command
 from sqlalchemy.orm import Session
 
-from bot import dp, bot
+from loader import dp, bot
 from database import User, Account, Order, get_db
 from keyboards import (
     get_main_keyboard, get_payment_keyboard,
