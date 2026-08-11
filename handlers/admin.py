@@ -7,7 +7,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Command, Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
-from bot import dp, bot
+from loader import dp, bot
 from database import User, Account, Order, get_db
 from keyboards import get_admin_keyboard, get_cancel_keyboard
 from config import ADMIN_IDS
