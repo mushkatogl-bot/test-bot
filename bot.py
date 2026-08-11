@@ -1,11 +1,11 @@
 import asyncio
 import logging
 
-from aiogram import Bot, Dispatcher, types  # Dispatcher импортирован здесь
+from aiogram import Dispatcher  # Dispatcher импортирован здесь
 from aiogram.types import BotCommand
+
+from loader import dp
 from config import BOT_TOKEN
-from loader import dp, bot
-from handlers import user, admin  # Импортируем обработчики для их регистрации
 
 # Настройка логирования
 logging.basicConfig(
