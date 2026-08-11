@@ -1,12 +1,14 @@
+---
 meta:
   environment: python
   toolchain:
     name: pip
-    version: "3.11"
-
+    version: 3.11
 build:
-  type: python
-
+  requirementsPath: requirements.txt
+  useCache: true
 run:
-  command: python bot.py
-  port: 80
+  scriptName: bot.py
+  command: null
+  persistenceMount: /data
+  containerPort: 80

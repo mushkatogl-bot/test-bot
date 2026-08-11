@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Виртуальное окружение
+venv/
+env/
+ENV/
+.venv/
+
+# База данных
+*.db
+*.sqlite
+*.sqlite3
+
+# Файлы с куками (важно!)
+cookies/*.txt
+!cookies/.gitkeep
+
+# Временные файлы
+temp_*
+extract_*
+
+# Файлы окружения
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Логи
+*.log
