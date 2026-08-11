@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from aiogram import Bot, Dispatcher, types  # Dispatcher импортирован здесь
 from aiogram.types import BotCommand
 
 from config import BOT_TOKEN
@@ -14,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Установка команд бота
-async def set_commands(dp: Dispatcher):
+async def set_commands(dp: Dispatcher):  # Теперь Dispatcher определен
     await dp.bot.set_my_commands([
         BotCommand("start", "🏠 Главное меню"),
         BotCommand("admin", "👑 Админ-панель")
