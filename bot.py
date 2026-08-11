@@ -3,6 +3,7 @@ import logging
 
 from aiogram import Dispatcher  # Dispatcher импортирован здесь
 from aiogram.types import BotCommand
+from handlers import user, admin
 
 from loader import dp
 from config import BOT_TOKEN

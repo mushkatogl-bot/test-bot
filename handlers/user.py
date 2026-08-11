@@ -18,9 +18,9 @@ from utils import generate_order_id, format_order_history
 
 
 # ==================== Команда /start ====================
-@dp.message_handler(Command("start"))
+@dp.message_handler(Command('start'))
 async def cmd_start(message: types.Message):
-    user_id = message.from_user.id
+    await message.answer("👋 Добро пожаловать!")
 
     # Регистрация пользователя
     with next(get_db()) as db:
